@@ -81,11 +81,22 @@ Mets `TUNE_ENABLED = false` pour figer les gains sur les valeurs de `GAINS`.
 
 ## Maintien au-dessus de l'ancre (navigation table)
 
-Avec `NAV_ENABLED = true`, une **boucle externe** lit l'offset horizontal par
-rapport à l'ancre sur `RELAY_NAV` (4 directions + 1 signal de distance dessous,
-**signal fort = proche**). Un PD par axe transforme cet offset en **consigne
-d'inclinaison** : la fusée s'incline vers l'ancre pour y revenir, puis se redresse
-une fois au-dessus. `NAV_ENABLED = false` → simple hover vertical.
+Avec `NAV_ENABLED = true`, une **boucle externe** reconstruit l'écart à l'ancre
+depuis `RELAY_NAV`, puis un PD par axe le transforme en **consigne d'inclinaison** :
+la fusée s'incline vers l'ancre pour y revenir, puis se redresse une fois au-dessus.
+`NAV_ENABLED = false` → simple hover vertical.
+
+L'écart est reconstruit en combinant deux sources (elles ne portent pas la même
+info) :
+
+- **Direction** — les 4 signaux directionnels de la nav table indiquent *où* est
+  l'ancre (ex : `north` actif = ancre au nord), **pas** la distance. Normalisés,
+  ils donnent la direction sur chaque axe : `dir = (north − south) / 15`.
+- **Éloignement** — le **modulating link** (signal `dist`, dessous) donne la
+  distance : `15` = pile sur l'ancre, `0` = très loin / hors de portée. On en
+  déduit `farness = 15 − dist`.
+
+Écart utilisé par le PD : `e = dir × farness` (direction × éloignement).
 
 Réglages (CONFIG) :
 

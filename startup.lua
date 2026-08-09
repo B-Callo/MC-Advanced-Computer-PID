@@ -79,8 +79,9 @@ local INVERT_PITCH = false   -- axe nord/sud
 local INVERT_ROLL  = false   -- axe est/ouest
 
 -- ---- BOUCLE EXTERNE : maintien au-dessus de l'ancre (navigation table) ------
--- Entrees nav : 4 directions (meme orientation que le gimbal) + distance dessous.
--- Signal FORT = PROCHE de l'ancre dans cette direction.
+-- 4 signaux DIRECTIONNELS (nav table) : indiquent la DIRECTION de l'ancre, PAS la
+--   distance. Ex: 'north' actif = l'ancre est au nord (il faut aller au nord).
+-- 1 signal DISTANCE (modulating link, dessous) : 15 = pile sur l'ancre, 0 = loin.
 local NAV = {
   north = { device = RELAY_NAV, side = "front"  },
   south = { device = RELAY_NAV, side = "back"   },
@@ -108,7 +109,7 @@ local NAV_MAX_TILT = 5
 local NAV_INVERT_NS = false
 local NAV_INVERT_EW = false
 
--- Offset ignore sous ce seuil (zone morte : evite de tiller pour rien pres de l'ancre).
+-- Eloignement (15 - dist) ignore sous ce seuil : zone morte autour de l'ancre.
 local NAV_DEADBAND = 1
 
 -- Reglages fins.
@@ -239,12 +240,27 @@ end
 --   Retourne le tilt vise (unites capteur) pour ramener la fusee sur l'ancre.
 --------------------------------------------------------------------------------
 local function navTilt(navPID, posKey, negKey, invert, dt)
-  -- ecart directionnel a l'ancre sur cet axe (signal fort = proche)
-  local axis = readNav(posKey) - readNav(negKey)
-  if math.abs(axis) <= NAV_DEADBAND then axis = 0 end
-  if invert then axis = -axis end
-  -- PD ramenant l'ecart a 0 ; la sortie devient la consigne d'inclinaison
-  local u = navPID:update(axis, 0, dt)
+  -- DIRECTION vers l'ancre sur cet axe : les signaux directionnels de la nav table
+  -- indiquent OU est l'ancre (pas la distance). Normalise en [-1..1].
+  --   ex: north actif => ancre au nord => dir > 0 (aller au nord)
+  local dir = (readNav(posKey) - readNav(negKey)) / 15
+
+  -- MAGNITUDE de l'ecart : modulating link (15 = sur l'ancre, 0 = tres loin).
+  local farness = 15 - readNav("dist")
+
+  -- proche de l'ancre : on ne demande aucune inclinaison
+  if farness <= NAV_DEADBAND then
+    navPID.prevError = 0
+    return 0
+  end
+
+  -- vecteur ecart vers l'ancre = direction * eloignement
+  local e = dir * farness
+  if invert then e = -e end
+
+  -- PD : sortie = consigne d'inclinaison vers l'ancre (amortie par kd).
+  -- measurement = -e  =>  err = e  =>  u = kp*e + kd*(de/dt)
+  local u = navPID:update(-e, 0, dt)
   return clamp(u, -NAV_MAX_TILT, NAV_MAX_TILT)
 end
 
