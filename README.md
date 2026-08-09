@@ -5,6 +5,15 @@ sur un **Advanced Computer** de CC:Tweaked (Minecraft).
 
 Objectif : garder la fusée **droite en stationnaire** (hover) par *thrust vectoring* —
 le PID oriente le vector thruster pour annuler l'inclinaison mesurée par le gimbal sensor.
+Une **boucle de position** optionnelle la maintient en plus **au-dessus d'une ancre**.
+
+Architecture en **cascade** :
+
+```
+navigation table ──> BOUCLE EXTERNE (position/PD) ──> consigne d'inclinaison
+                                                           │
+gimbal sensor ─────> BOUCLE INTERNE (attitude/PID) <───────┘ ──> vector thruster
+```
 
 ## Fichiers
 
@@ -13,13 +22,14 @@ le PID oriente le vector thruster pour annuler l'inclinaison mesurée par le gim
 
 ## Câblage
 
-Trois redstone relays :
+Quatre redstone relays :
 
-| Variable     | Rôle                                    |
-|--------------|-----------------------------------------|
-| `RELAY_IN`   | entrées gimbal sensor (4 directions)    |
-| `RELAY_OUT`  | sorties vector thruster (4 directions)  |
-| `RELAY_TUNE` | réglage live des gains (kp / ki / kd)   |
+| Variable     | Rôle                                                    |
+|--------------|---------------------------------------------------------|
+| `RELAY_IN`   | entrées gimbal sensor (4 directions)                    |
+| `RELAY_OUT`  | sorties vector thruster (4 directions)                  |
+| `RELAY_TUNE` | réglage live des gains (kp / ki / kd)                   |
+| `RELAY_NAV`  | navigation table : offset vers l'ancre (4 dir + dist)   |
 
 **Entrées — gimbal sensor (4 signaux redstone analogiques 0-15) :**
 une valeur par direction d'inclinaison.
@@ -44,12 +54,14 @@ Axes de contrôle :
 
 Tout est en haut de `startup.lua`, section `CONFIG` :
 
-1. **`RELAY`** — nom du redstone relay (voir `peripheral.getNames()` en jeu).
-   Mets `"computer"` pour utiliser directement les faces de l'ordinateur.
-2. **`INPUTS` / `OUTPUTS`** — la `side` redstone de chaque signal
+1. **`RELAY_IN` / `RELAY_OUT` / `RELAY_TUNE` / `RELAY_NAV`** — noms des relays
+   (voir `peripheral.getNames()` en jeu). Mets `"computer"` pour utiliser
+   directement les faces de l'ordinateur.
+2. **`INPUTS` / `OUTPUTS` / `NAV`** — la `side` redstone de chaque signal
    (`top`, `bottom`, `left`, `right`, `front`, `back`).
-3. **`GAINS`** — `kp`, `ki`, `kd`.
-4. **`INVERT_PITCH` / `INVERT_ROLL`** — sens de correction (voir tuning).
+3. **`GAINS`** (attitude) et **`NAV_GAINS`** (position).
+4. **`INVERT_PITCH` / `INVERT_ROLL`** et **`NAV_INVERT_NS` / `NAV_INVERT_EW`** —
+   sens de correction (voir tuning / calibration).
 
 ## Réglage live des gains (relay de tune)
 
@@ -66,6 +78,33 @@ gain = signal_redstone / 15 * TUNE_MAX[gain]
 tu as besoin de plus de course.
 
 Mets `TUNE_ENABLED = false` pour figer les gains sur les valeurs de `GAINS`.
+
+## Maintien au-dessus de l'ancre (navigation table)
+
+Avec `NAV_ENABLED = true`, une **boucle externe** lit l'offset horizontal par
+rapport à l'ancre sur `RELAY_NAV` (4 directions + 1 signal de distance dessous,
+**signal fort = proche**). Un PD par axe transforme cet offset en **consigne
+d'inclinaison** : la fusée s'incline vers l'ancre pour y revenir, puis se redresse
+une fois au-dessus. `NAV_ENABLED = false` → simple hover vertical.
+
+Réglages (CONFIG) :
+
+- **`NAV_GAINS`** `{ kp, kd }` — force du retour (`kp`) et amortissement (`kd`).
+- **`NAV_MAX_TILT`** — inclinaison maximale demandée (limite l'agressivité).
+- **`NAV_DEADBAND`** — zone morte : n'incline pas pour un offset minuscule.
+- **`NAV_INVERT_NS` / `NAV_INVERT_EW`** — sens du retour (voir calibration).
+
+**Calibration** (à faire après avoir réglé la boucle d'attitude) :
+
+1. Règle d'abord l'attitude seule (`NAV_ENABLED = false`) : la fusée doit tenir
+   la verticale proprement.
+2. Active la nav. Décale la fusée à la main : elle doit **revenir vers l'ancre**.
+   Si elle **s'éloigne** sur un axe, inverse `NAV_INVERT_NS` / `NAV_INVERT_EW`.
+3. Ça dépasse / oscille autour de l'ancre ? Baisse `NAV_GAINS.kp` ou monte `kd`.
+   Trop mou / trop lent ? Monte `kp`.
+
+L'écran affiche `csg` (consigne d'inclinaison calculée) et la ligne `NAV ancre`
+avec la distance et les 4 signaux bruts — utile pour calibrer.
 
 ## Tuning (réglage des gains)
 

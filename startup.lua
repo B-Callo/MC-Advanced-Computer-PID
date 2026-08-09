@@ -3,15 +3,18 @@
   ---------------------------------------------------------------------------
   Objectif : garder la fusee droite en stationnaire (hover) par thrust vectoring.
 
-  Principe :
+  Principe (double boucle en cascade) :
     - Le "gimbal sensor" renvoie 4 signaux redstone analogiques (0-15), un par
       direction d'inclinaison : nord, sud, est, ouest.
     - On calcule l'inclinaison nette sur 2 axes :
           tangage (pitch) = nord - sud
           roulis  (roll)  = est  - ouest
-    - Un PID par axe ramene cette inclinaison a 0.
-    - La sortie du PID oriente le "vector thruster" via 4 signaux redstone
-      (cables sur un redstone relay), un par direction.
+    - BOUCLE INTERNE (attitude) : un PID par axe suit une consigne d'inclinaison.
+    - BOUCLE EXTERNE (position) : la "navigation table" (relay nav) donne l'offset
+      horizontal par rapport a l'ancre. Un PD par axe transforme cet offset en
+      consigne d'inclinaison -> la fusee s'incline vers l'ancre pour y revenir,
+      puis se redresse. Desactivable (NAV_ENABLED) pour rester en simple hover.
+    - La sortie du PID interne oriente le "vector thruster" via 4 signaux redstone.
 
   ==> Tout se configure dans la section CONFIG juste en dessous.
 ============================================================================]]--
@@ -20,9 +23,10 @@
 
 -- Nom du peripheral redstone relay tel qu'affiche par CC.
 -- Mets "computer" pour utiliser directement les 6 faces de l'ordinateur.
-local RELAY_IN = "redstone_relay_1"
-local RELAY_OUT = "redstone_relay_2"
+local RELAY_IN = "redstone_relay_2"
+local RELAY_OUT = "redstone_relay_1"
 local RELAY_TUNE = "redstone_relay_3"
+local RELAY_NAV = "redstone_relay_4"
 
 -- ENTREES : gimbal sensor. Une face par direction d'inclinaison.
 -- device = RELAY (le relay) ou "computer" (face de l'ordi) ; side = face redstone.
@@ -46,7 +50,7 @@ local OUTPUTS = {
 local TUNE = {
   kp = { device = RELAY_TUNE, side = "front" },
   ki = { device = RELAY_TUNE, side = "back"  },
-  kd = { device = RELAY_TUNE, side = "left"  },
+  kd = { device = RELAY_TUNE, side = "right"  },
 }
 
 -- Active la lecture des gains depuis le relay de tune.
@@ -73,6 +77,39 @@ local GAINS = {
 -- se stabiliser), passe le flag correspondant a true (ou inverse les cables).
 local INVERT_PITCH = false   -- axe nord/sud
 local INVERT_ROLL  = false   -- axe est/ouest
+
+-- ---- BOUCLE EXTERNE : maintien au-dessus de l'ancre (navigation table) ------
+-- Entrees nav : 4 directions (meme orientation que le gimbal) + distance dessous.
+-- Signal FORT = PROCHE de l'ancre dans cette direction.
+local NAV = {
+  north = { device = RELAY_NAV, side = "front"  },
+  south = { device = RELAY_NAV, side = "back"   },
+  east  = { device = RELAY_NAV, side = "left"   },
+  west  = { device = RELAY_NAV, side = "right"  },
+  dist  = { device = RELAY_NAV, side = "bottom" },  -- 15 = sur l'ancre, 0 = loin
+}
+
+-- Active le maintien de position. false = simple hover (consigne = vertical).
+local NAV_ENABLED = true
+
+-- Gains de la boucle externe (offset horizontal -> consigne d'inclinaison).
+-- PD : Kp pour revenir vers l'ancre, Kd pour amortir (evite le depassement).
+local NAV_GAINS = {
+  kp = 0.40,
+  kd = 0.60,
+}
+
+-- Consigne d'inclinaison maximale demandee a la boucle interne (unites capteur).
+-- Limite l'agressivite du retour vers l'ancre.
+local NAV_MAX_TILT = 5
+
+-- Sens du retour. Si la fusee s'ELOIGNE de l'ancre au lieu de s'en rapprocher,
+-- inverse l'axe correspondant (le tilt physique va dans le mauvais sens).
+local NAV_INVERT_NS = false
+local NAV_INVERT_EW = false
+
+-- Offset ignore sous ce seuil (zone morte : evite de tiller pour rien pres de l'ancre).
+local NAV_DEADBAND = 1
 
 -- Reglages fins.
 local DT        = 0.05  -- periode de boucle en secondes (0.05 = 1 tick MC)
@@ -125,16 +162,15 @@ local function roundRS(x)
 end
 
 --------------------------------------------------------------------------------
--- Controleur PID (setpoint fixe = 0 : on veut zero inclinaison)
+-- Controleur PID generique (consigne = setpoint, 0 par defaut)
 --------------------------------------------------------------------------------
 local function newPID(g)
   return {
-    kp = g.kp, ki = g.ki, kd = g.kd,
+    kp = g.kp, ki = g.ki or 0, kd = g.kd or 0,
     integral = 0,
     prevError = 0,
-    update = function(self, measurement, dt)
-      -- setpoint = 0  =>  erreur = -mesure
-      local err = -measurement
+    update = function(self, measurement, setpoint, dt)
+      local err = (setpoint or 0) - measurement
 
       -- terme integral avec anti-windup
       self.integral = clamp(self.integral + err * dt, -I_LIMIT, I_LIMIT)
@@ -155,13 +191,17 @@ end
 --------------------------------------------------------------------------------
 -- Etat capteur filtre (EMA)
 --------------------------------------------------------------------------------
-local filt = { north = 0, south = 0, east = 0, west = 0 }
+local filt = {}
 
-local function readFiltered(key)
-  local raw = readAnalog(INPUTS[key])
-  filt[key] = FILTER * raw + (1 - FILTER) * filt[key]
+local function readFilteredSpec(key, spec)
+  local raw = readAnalog(spec)
+  filt[key] = FILTER * raw + (1 - FILTER) * (filt[key] or 0)
   return filt[key]
 end
+
+-- gimbal sensor (boucle interne) et navigation table (boucle externe)
+local function readIn(key)  return readFilteredSpec("in_"  .. key, INPUTS[key]) end
+local function readNav(key) return readFilteredSpec("nav_" .. key, NAV[key])    end
 
 --------------------------------------------------------------------------------
 -- Lecture live des gains depuis le relay de tune (0-15 -> 0..TUNE_MAX).
@@ -195,15 +235,38 @@ local function allOff()
 end
 
 --------------------------------------------------------------------------------
+-- Boucle externe : offset horizontal (nav) -> consigne d'inclinaison.
+--   Retourne le tilt vise (unites capteur) pour ramener la fusee sur l'ancre.
+--------------------------------------------------------------------------------
+local function navTilt(navPID, posKey, negKey, invert, dt)
+  -- ecart directionnel a l'ancre sur cet axe (signal fort = proche)
+  local axis = readNav(posKey) - readNav(negKey)
+  if math.abs(axis) <= NAV_DEADBAND then axis = 0 end
+  if invert then axis = -axis end
+  -- PD ramenant l'ecart a 0 ; la sortie devient la consigne d'inclinaison
+  local u = navPID:update(axis, 0, dt)
+  return clamp(u, -NAV_MAX_TILT, NAV_MAX_TILT)
+end
+
+--------------------------------------------------------------------------------
 -- Affichage
 --------------------------------------------------------------------------------
-local function draw(pitch, roll, uPitch, uRoll, gains)
+local function draw(pitch, roll, uPitch, uRoll, gains, setPitch, setRoll)
   term.clear()
   term.setCursorPos(1, 1)
   print("=== PID Attitude Fusee (Ctrl+T pour arreter) ===")
   print("")
-  print(string.format(" TANGAGE (N-S) : inclin=%+.2f  cmd=%+.2f", pitch, uPitch))
-  print(string.format(" ROULIS  (E-O) : inclin=%+.2f  cmd=%+.2f", roll,  uRoll))
+  print(string.format(" TANGAGE (N-S) : inclin=%+.2f  csg=%+.2f  cmd=%+.2f", pitch, setPitch, uPitch))
+  print(string.format(" ROULIS  (E-O) : inclin=%+.2f  csg=%+.2f  cmd=%+.2f", roll,  setRoll,  uRoll))
+  print("")
+  if NAV_ENABLED then
+    print(string.format(" NAV ancre : dist=%2d  N%2d S%2d E%2d W%2d",
+      readAnalog(NAV.dist),
+      readAnalog(NAV.north), readAnalog(NAV.south),
+      readAnalog(NAV.east),  readAnalog(NAV.west)))
+  else
+    print(" NAV : desactive (hover simple)")
+  end
   print("")
   print(string.format(" Gains  Kp=%.2f  Ki=%.2f  Kd=%.2f", gains.kp, gains.ki, gains.kd))
   print(TUNE_ENABLED and " (tune LIVE via relay)" or " (gains fixes)")
@@ -215,6 +278,8 @@ end
 local function run()
   local pidPitch = newPID(GAINS)
   local pidRoll  = newPID(GAINS)
+  local navPitch = newPID(NAV_GAINS)   -- boucle externe axe nord/sud
+  local navRoll  = newPID(NAV_GAINS)   -- boucle externe axe est/ouest
 
   allOff()
   local last = os.clock()
@@ -226,22 +291,29 @@ local function run()
     if dt <= 0 then dt = DT end
     last = now
 
-    -- inclinaison nette par axe
-    local pitch = readFiltered("north") - readFiltered("south")
-    local roll  = readFiltered("east")  - readFiltered("west")
+    -- inclinaison nette par axe (boucle interne)
+    local pitch = readIn("north") - readIn("south")
+    local roll  = readIn("east")  - readIn("west")
 
     -- deadband anti-jitter
     if math.abs(pitch) <= DEADBAND then pitch = 0 end
     if math.abs(roll)  <= DEADBAND then roll  = 0 end
 
-    -- gains : live depuis le relay de tune, ou valeurs fixes
+    -- BOUCLE EXTERNE : consigne d'inclinaison pour rester sur l'ancre
+    local setPitch, setRoll = 0, 0
+    if NAV_ENABLED then
+      setPitch = navTilt(navPitch, "north", "south", NAV_INVERT_NS, dt)
+      setRoll  = navTilt(navRoll,  "east",  "west",  NAV_INVERT_EW, dt)
+    end
+
+    -- gains internes : live depuis le relay de tune, ou valeurs fixes
     local gains = TUNE_ENABLED and readGains() or GAINS
     pidPitch.kp, pidPitch.ki, pidPitch.kd = gains.kp, gains.ki, gains.kd
     pidRoll.kp,  pidRoll.ki,  pidRoll.kd  = gains.kp, gains.ki, gains.kd
 
-    -- PID
-    local uPitch = pidPitch:update(pitch, dt)
-    local uRoll  = pidRoll:update(roll,  dt)
+    -- BOUCLE INTERNE : suit la consigne d'inclinaison
+    local uPitch = pidPitch:update(pitch, setPitch, dt)
+    local uRoll  = pidRoll:update(roll,  setRoll,  dt)
 
     -- borne la commande a l'echelle redstone
     uPitch = clamp(uPitch, -RS_MAX, RS_MAX)
@@ -255,7 +327,7 @@ local function run()
     driveAxis(cmdPitch, "north", "south")
     driveAxis(cmdRoll,  "east",  "west")
 
-    draw(pitch, roll, cmdPitch, cmdRoll, gains)
+    draw(pitch, roll, cmdPitch, cmdRoll, gains, setPitch, setRoll)
     sleep(DT)
   end
 end
