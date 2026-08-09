@@ -13,6 +13,14 @@ le PID oriente le vector thruster pour annuler l'inclinaison mesurée par le gim
 
 ## Câblage
 
+Trois redstone relays :
+
+| Variable     | Rôle                                    |
+|--------------|-----------------------------------------|
+| `RELAY_IN`   | entrées gimbal sensor (4 directions)    |
+| `RELAY_OUT`  | sorties vector thruster (4 directions)  |
+| `RELAY_TUNE` | réglage live des gains (kp / ki / kd)   |
+
 **Entrées — gimbal sensor (4 signaux redstone analogiques 0-15) :**
 une valeur par direction d'inclinaison.
 
@@ -43,10 +51,26 @@ Tout est en haut de `startup.lua`, section `CONFIG` :
 3. **`GAINS`** — `kp`, `ki`, `kd`.
 4. **`INVERT_PITCH` / `INVERT_ROLL`** — sens de correction (voir tuning).
 
+## Réglage live des gains (relay de tune)
+
+Avec `TUNE_ENABLED = true`, les gains sont lus **en continu** sur `RELAY_TUNE`
+(3 faces, un signal 0-15 par gain). Tu peux donc régler le PID à chaud avec des
+leviers/comparateurs sans rebooter. Le mapping :
+
+```
+gain = signal_redstone / 15 * TUNE_MAX[gain]
+```
+
+`TUNE_MAX` (dans la CONFIG) fixe la valeur atteinte à plein signal (15) :
+`kp` → 0..4.0, `ki` → 0..1.0, `kd` → 0..2.0 par défaut. Ajuste ces plafonds si
+tu as besoin de plus de course.
+
+Mets `TUNE_ENABLED = false` pour figer les gains sur les valeurs de `GAINS`.
+
 ## Tuning (réglage des gains)
 
-1. Mets `ki = 0` et `kd = 0`. Augmente `kp` jusqu'à ce que la fusée réagisse
-   et revienne vers la verticale.
+1. Mets `ki = 0` et `kd = 0` (faces ki/kd du relay à 0). Augmente `kp` jusqu'à ce
+   que la fusée réagisse et revienne vers la verticale.
 2. **Si un axe diverge** (part de plus en plus fort au lieu de se corriger) :
    passe `INVERT_PITCH` ou `INVERT_ROLL` à `true` (ou inverse les câbles de
    cette paire de sorties). Le signe de correction est faux.

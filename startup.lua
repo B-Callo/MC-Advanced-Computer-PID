@@ -20,26 +20,48 @@
 
 -- Nom du peripheral redstone relay tel qu'affiche par CC.
 -- Mets "computer" pour utiliser directement les 6 faces de l'ordinateur.
-local RELAY = "redstone_relay_0"
+local RELAY_IN = "redstone_relay_1"
+local RELAY_OUT = "redstone_relay_2"
+local RELAY_TUNE = "redstone_relay_3"
 
 -- ENTREES : gimbal sensor. Une face par direction d'inclinaison.
 -- device = RELAY (le relay) ou "computer" (face de l'ordi) ; side = face redstone.
 local INPUTS = {
-  north = { device = RELAY, side = "top"    },
-  south = { device = RELAY, side = "bottom" },
-  east  = { device = RELAY, side = "left"   },
-  west  = { device = RELAY, side = "right"  },
+  north = { device = RELAY_IN, side = "front"    },
+  south = { device = RELAY_IN, side = "back" },
+  east  = { device = RELAY_IN, side = "left"   },
+  west  = { device = RELAY_IN, side = "right"  },
 }
 
 -- SORTIES : orientation du vector thruster. Une face par direction de poussee.
 local OUTPUTS = {
-  north = { device = RELAY, side = "front" },
-  south = { device = RELAY, side = "back"  },
-  east  = { device = RELAY, side = "left"  },
-  west  = { device = RELAY, side = "right" },
+  north = { device = RELAY_OUT, side = "front" },
+  south = { device = RELAY_OUT, side = "back"  },
+  east  = { device = RELAY_OUT, side = "left"  },
+  west  = { device = RELAY_OUT, side = "right" },
 }
 
--- Gains PID (identiques sur les 2 axes par defaut ; separe-les si besoin).
+-- REGLAGE LIVE (relay de tune) : 3 signaux redstone 0-15 lus pour ajuster les
+-- gains sans rebooter. Chaque face code un gain, remappe de 0..15 vers 0..max.
+local TUNE = {
+  kp = { device = RELAY_TUNE, side = "front" },
+  ki = { device = RELAY_TUNE, side = "back"  },
+  kd = { device = RELAY_TUNE, side = "left"  },
+}
+
+-- Active la lecture des gains depuis le relay de tune.
+-- false = on utilise les valeurs fixes de GAINS ci-dessous.
+local TUNE_ENABLED = true
+
+-- Valeur de gain quand la face redstone est a 15 (plein). 0 -> gain nul.
+-- Ex: kp = signal/15 * 4.0  (donc 0..4.0 par pas de 4.0/15 ~ 0.27)
+local TUNE_MAX = {
+  kp = 4.0,
+  ki = 1.0,
+  kd = 2.0,
+}
+
+-- Gains PID par defaut (utilises si TUNE_ENABLED = false).
 -- Regle KP d'abord (reaction), puis KD (amortit l'oscillation), puis KI (biais).
 local GAINS = {
   kp = 1.5,   -- proportionnel : force de correction immediate
@@ -142,6 +164,17 @@ local function readFiltered(key)
 end
 
 --------------------------------------------------------------------------------
+-- Lecture live des gains depuis le relay de tune (0-15 -> 0..TUNE_MAX).
+--------------------------------------------------------------------------------
+local function readGains()
+  return {
+    kp = readAnalog(TUNE.kp) / 15 * TUNE_MAX.kp,
+    ki = readAnalog(TUNE.ki) / 15 * TUNE_MAX.ki,
+    kd = readAnalog(TUNE.kd) / 15 * TUNE_MAX.kd,
+  }
+end
+
+--------------------------------------------------------------------------------
 -- Applique une commande d'axe sur une paire de sorties opposees.
 --   u > 0  -> pousse vers posDir ; u < 0 -> pousse vers negDir.
 --------------------------------------------------------------------------------
@@ -164,7 +197,7 @@ end
 --------------------------------------------------------------------------------
 -- Affichage
 --------------------------------------------------------------------------------
-local function draw(pitch, roll, uPitch, uRoll)
+local function draw(pitch, roll, uPitch, uRoll, gains)
   term.clear()
   term.setCursorPos(1, 1)
   print("=== PID Attitude Fusee (Ctrl+T pour arreter) ===")
@@ -172,7 +205,8 @@ local function draw(pitch, roll, uPitch, uRoll)
   print(string.format(" TANGAGE (N-S) : inclin=%+.2f  cmd=%+.2f", pitch, uPitch))
   print(string.format(" ROULIS  (E-O) : inclin=%+.2f  cmd=%+.2f", roll,  uRoll))
   print("")
-  print(string.format(" Gains  Kp=%.2f  Ki=%.2f  Kd=%.2f", GAINS.kp, GAINS.ki, GAINS.kd))
+  print(string.format(" Gains  Kp=%.2f  Ki=%.2f  Kd=%.2f", gains.kp, gains.ki, gains.kd))
+  print(TUNE_ENABLED and " (tune LIVE via relay)" or " (gains fixes)")
 end
 
 --------------------------------------------------------------------------------
@@ -200,6 +234,11 @@ local function run()
     if math.abs(pitch) <= DEADBAND then pitch = 0 end
     if math.abs(roll)  <= DEADBAND then roll  = 0 end
 
+    -- gains : live depuis le relay de tune, ou valeurs fixes
+    local gains = TUNE_ENABLED and readGains() or GAINS
+    pidPitch.kp, pidPitch.ki, pidPitch.kd = gains.kp, gains.ki, gains.kd
+    pidRoll.kp,  pidRoll.ki,  pidRoll.kd  = gains.kp, gains.ki, gains.kd
+
     -- PID
     local uPitch = pidPitch:update(pitch, dt)
     local uRoll  = pidRoll:update(roll,  dt)
@@ -216,7 +255,7 @@ local function run()
     driveAxis(cmdPitch, "north", "south")
     driveAxis(cmdRoll,  "east",  "west")
 
-    draw(pitch, roll, cmdPitch, cmdRoll)
+    draw(pitch, roll, cmdPitch, cmdRoll, gains)
     sleep(DT)
   end
 end
