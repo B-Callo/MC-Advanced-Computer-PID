@@ -78,6 +78,10 @@ local MAX_TILT = 0.707   -- = sin(45 deg) : inclinaison maxi demandee ~45 degres
 -- PID de position agit normalement pour freiner et s'arreter en douceur.
 local APPROACH_DIST = 20
 
+-- Idem pour l'ALTITUDE : ecart vertical (blocs) sature avant le PID de hauteur,
+-- pour que son terme derive ne s'emballe pas sur un grand ecart d'altitude.
+local ALT_APPROACH = 20
+
 -- Sens de correction. A basculer si un axe DIVERGE (voir calibration dans README).
 local ATT_INVERT_X = false   -- attitude, axe X du corps
 local ATT_INVERT_Z = false   -- attitude, axe Z du corps
@@ -438,7 +442,11 @@ local function controlStep()
   -- 6) Boucle d'ALTITUDE -> puissance
   local power = BASE_POWER
   if state.target and state.target.y then
-    power = BASE_POWER + pidAlt:step(state.target.y - P8.y, dt)
+    -- meme principe que la position : on sature l'ecart vertical a ALT_APPROACH
+    -- pour que le terme derive ne s'emballe pas sur un grand ecart d'altitude.
+    local errY = state.target.y - P8.y
+    errY = clamp(errY, -ALT_APPROACH, ALT_APPROACH)
+    power = BASE_POWER + pidAlt:step(errY, dt)
   end
   power = clamp(power, 0, 15)
   setPower(power)
