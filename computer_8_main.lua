@@ -376,6 +376,7 @@ local function controlStep()
   tlm.P8, tlm.P6, tlm.P9 = P8, P6, P9
   tlm.lenX, tlm.lenY = lenA, lenB
   tlm.ageX, tlm.ageY = now - state.t6, now - state.t9
+  tlm.up = ey            -- axe Y du corps (haut) dans le monde ; droit = (0,1,0)
   tlm.tiltX, tlm.tiltZ = tiltX, tiltZ
   tlm.target, tlm.armed, tlm.legs = state.target, state.armed, state.legs
 
@@ -449,15 +450,18 @@ local function drawTo(out, isMonitor)
         .. (tlm.ok and "" or " capteurs?"))
   line(2, "Pos  " .. fmtVec(tlm.P8))
   line(3, "Cible" .. fmtVec(tlm.target))
-  line(4, string.format("Tilt X=%+.3f Z=%+.3f", tlm.tiltX or 0, tlm.tiltZ or 0))
-  line(5, string.format("Csg  X=%+.3f Z=%+.3f", tlm.setTiltX or 0, tlm.setTiltZ or 0))
-  line(6, string.format("Bras |X|=%.1f |Y|=%.1f  ageXY=%.1f/%.1fs",
+  local u = tlm.up
+  line(4, "AxeY " .. (u and string.format("%+.2f %+.2f %+.2f", u.x, u.y, u.z)
+        or "  ?    ?    ?") .. " (droit=0,1,0)")
+  line(5, string.format("Tilt X=%+.3f Z=%+.3f", tlm.tiltX or 0, tlm.tiltZ or 0))
+  line(6, string.format("Csg  X=%+.3f Z=%+.3f", tlm.setTiltX or 0, tlm.setTiltZ or 0))
+  line(7, string.format("Bras |X|=%.1f |Y|=%.1f  ageXY=%.1f/%.1fs",
         tlm.lenX or 0, tlm.lenY or 0, tlm.ageX or 9, tlm.ageY or 9))
-  line(7, string.format("Puissance %2d/15   Trains:%s",
+  line(8, string.format("Puissance %2d/15   Trains:%s",
         tlm.power or 0, tlm.legs and "SORTIS" or "rentres"))
   if not isMonitor then
-    line(8, "")
-    line(9, "Ctrl+T pour arreter (coupe tout).")
+    line(9, "")
+    line(10, "Ctrl+T pour arreter (coupe tout).")
   end
 end
 

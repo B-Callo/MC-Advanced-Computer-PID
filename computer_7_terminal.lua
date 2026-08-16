@@ -105,6 +105,8 @@ local function showStatus()
         .. (t.ok == false and "  (capteurs perimes!)" or ""))
   print("  Position: " .. fmtVec(t.P8))
   print("  Cible   : " .. fmtVec(t.target))
+  print("  Axe Y   : " .. (t.up and string.format("%+.2f, %+.2f, %+.2f  (droit=0,1,0)",
+        t.up.x, t.up.y, t.up.z) or "?"))
   print(string.format("  Tilt    : X=%+.3f Z=%+.3f", t.tiltX or 0, t.tiltZ or 0))
   print(string.format("  Consigne: X=%+.3f Z=%+.3f", t.setTiltX or 0, t.setTiltZ or 0))
   print(string.format("  Bras    : |X|=%.2f |Y|=%.2f  (attendu ~3)",
