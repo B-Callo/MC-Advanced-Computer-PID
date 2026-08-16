@@ -72,16 +72,6 @@ local BASE_POWER = 8
 -- ou 1.0 = fusee couchee a l'horizontale). Limite l'agressivite du deplacement.
 local MAX_TILT = 0.707   -- = sin(45 deg) : inclinaison maxi demandee ~45 degres
 
--- Distance horizontale (blocs) au-dela de laquelle l'ecart est sature : la fusee
--- demande simplement le lean maxi vers la cible, avec un ecart constant (pas de
--- terme derive qui s'emballe -> plus de clignotement de la consigne). En-deca, le
--- PID de position agit normalement pour freiner et s'arreter en douceur.
-local APPROACH_DIST = 20
-
--- Idem pour l'ALTITUDE : ecart vertical (blocs) sature avant le PID de hauteur,
--- pour que son terme derive ne s'emballe pas sur un grand ecart d'altitude.
-local ALT_APPROACH = 20
-
 -- Sens de correction. A basculer si un axe DIVERGE (voir calibration dans README).
 local ATT_INVERT_X = false   -- attitude, axe X du corps
 local ATT_INVERT_Z = false   -- attitude, axe Z du corps
@@ -408,16 +398,6 @@ local function controlStep()
     local errBX = ax * exh.x + az * exh.z   -- ecart le long de X corps
     local errBZ = ax * ezh.x + az * ezh.z   -- ecart le long de Z corps
 
-    -- Sature la NORME de l'ecart a APPROACH_DIST : sur une cible lointaine on
-    -- demande juste "lean maxi vers la cible" avec un ecart CONSTANT -> le terme
-    -- derive retombe a ~0 (fini le clignotement bang-bang +/-MAX_TILT). En-deca,
-    -- l'ecart est reel et le PID agit normalement pour un arret en douceur.
-    local emag = math.sqrt(errBX * errBX + errBZ * errBZ)
-    if emag > APPROACH_DIST and emag > 0 then
-      local s = APPROACH_DIST / emag
-      errBX, errBZ = errBX * s, errBZ * s
-    end
-
     local uX = pidPosX:step(errBX, dt)
     local uZ = pidPosZ:step(errBZ, dt)
     if POS_INVERT_X then uX = -uX end
@@ -442,11 +422,7 @@ local function controlStep()
   -- 6) Boucle d'ALTITUDE -> puissance
   local power = BASE_POWER
   if state.target and state.target.y then
-    -- meme principe que la position : on sature l'ecart vertical a ALT_APPROACH
-    -- pour que le terme derive ne s'emballe pas sur un grand ecart d'altitude.
-    local errY = state.target.y - P8.y
-    errY = clamp(errY, -ALT_APPROACH, ALT_APPROACH)
-    power = BASE_POWER + pidAlt:step(errY, dt)
+    power = BASE_POWER + pidAlt:step(state.target.y - P8.y, dt)
   end
   power = clamp(power, 0, 15)
   setPower(power)
