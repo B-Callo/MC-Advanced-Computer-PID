@@ -463,10 +463,24 @@ local function run()
   end
 end
 
-local ok, err = pcall(run)
-allOff()
+-- Ecoute un ordre de mise a jour (rednet). En sortant, on arrete la boucle de
+-- controle (waitForAny) AVANT de mettre a jour, pour ne pas re-appliquer de
+-- poussee pendant le compte a rebours de update.lua.
+local doUpdate = false
+local function updateListener()
+  while true do
+    local _, msg = rednet.receive("rkt_update")
+    if msg == "update" then doUpdate = true; return end
+  end
+end
+
+local ok, err = pcall(parallel.waitForAny, run, updateListener)
+allOff()                          -- coupe poussee + orientation
 term.setCursorPos(1, 1)
-if not ok and err then
+if doUpdate then
+  print("Mise a jour recue...")
+  shell.run("update")             -- telecharge + reboot (si update.lua present)
+elseif not ok and err then
   print("Erreur : " .. tostring(err))
 else
   print("Arret. Thruster coupe.")

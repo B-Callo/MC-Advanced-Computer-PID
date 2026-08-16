@@ -52,7 +52,19 @@ local function run()
   end
 end
 
-local ok, err = pcall(run)
-if not ok and err then
+-- Ecoute un ordre de mise a jour (rednet) et se re-telecharge.
+local doUpdate = false
+local function updateListener()
+  while true do
+    local _, msg = rednet.receive("rkt_update")
+    if msg == "update" then doUpdate = true; return end
+  end
+end
+
+local ok, err = pcall(parallel.waitForAny, run, updateListener)
+if doUpdate then
+  print("\nMise a jour recue...")
+  shell.run("update")
+elseif not ok and err then
   print("\nErreur : " .. tostring(err))
 end

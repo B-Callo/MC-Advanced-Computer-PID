@@ -84,7 +84,8 @@ local function help()
   print("  gains              affiche les gains courants")
   print("  reseti             remet a zero les integrales (anti-windup)")
   print("  status             telemetrie recue du principal")
-  print("  resend             renvoie toute la consigne")
+  print("  resend             renvoie cible + gains + trains")
+  print("  update             met a jour TOUTE la flotte (rednet) + reboot")
   print("  help | exit")
 end
 
@@ -163,6 +164,9 @@ local function handle(input)
   elseif c == "reseti" then
     send({ resetI = true }); print("Integrales remises a zero.")
   elseif c == "status" then showStatus()
+  elseif c == "update" then
+    print("Mise a jour de toute la flotte...")
+    shell.run("update", "all")   -- diffuse + met a jour ce terminal + reboot
   elseif c == "resend" then
     -- volontairement SANS 'armed' (evite de desarmer par accident)
     send({ target = cmd.target, gains = cmd.gains, legs = cmd.legs })
@@ -201,6 +205,19 @@ local function telemetryLoop()
   end
 end
 
-parallel.waitForAny(inputLoop, telemetryLoop)
+-- Ecoute un ordre de mise a jour (rednet) et se re-telecharge.
+local doUpdate = false
+local function updateListener()
+  while true do
+    local _, msg = rednet.receive("rkt_update")
+    if msg == "update" then doUpdate = true; return end
+  end
+end
+
+parallel.waitForAny(inputLoop, telemetryLoop, updateListener)
+if doUpdate then
+  print("\nMise a jour recue...")
+  shell.run("update")
+end
 term.setCursorPos(1, term.getSize() and select(2, term.getSize()) or 1)
 print("\nTerminal ferme.")

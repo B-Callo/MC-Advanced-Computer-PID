@@ -85,13 +85,43 @@ cible Y   ─> ALTITUDE (PID) ────────────────�
 | `computer_6_sensor_x.lua`  | `computer_6`  | capteur position, axe X (X+3)     |
 | `computer_9_sensor_y.lua`  | `computer_9`  | capteur position, axe Y (Y+3)     |
 | `computer_7_terminal.lua`  | `computer_7`  | terminal de commande / tuning     |
+| `update.lua`               | tous          | mise à jour automatique           |
 
-**Installer** chaque fichier sur l'ordinateur correspondant, sous le nom
-`startup.lua` pour un démarrage automatique. Ex. sur `computer_8` :
+## Installation
+
+Sur chaque ordinateur, installer **deux** fichiers : son programme (sous le nom
+`startup.lua`, pour démarrer au boot) et `update.lua` (pour les mises à jour).
+
+Première install — sur chaque machine (le `delete` évite l'erreur « file exists »
+de `wget`, et ne râle pas si le fichier est absent) :
 
 ```
-pastebin get ... startup.lua        # ou wget / edit
+delete startup.lua
+wget https://raw.githubusercontent.com/B-Callo/MC-Advanced-Computer-PID/main/update.lua update.lua
 ```
+
+puis récupérer son programme, ex. sur `computer_8` :
+
+```
+wget https://raw.githubusercontent.com/B-Callo/MC-Advanced-Computer-PID/main/computer_8_main.lua startup.lua
+reboot
+```
+
+(remplacer par `computer_6_sensor_x.lua`, `computer_9_sensor_y.lua`,
+`computer_7_terminal.lua` selon la machine).
+
+## Mise à jour
+
+Une fois `update.lua` en place partout, plus besoin de retaper les `wget` :
+
+- `update`     — met à jour **cette machine** (détecte le bon fichier via l'ID de
+  l'ordinateur, où l'ID = le *N* de `computer_N`), écrase `startup.lua`, reboot.
+- `update all` — depuis **n'importe quelle** machine (typiquement le terminal),
+  diffuse l'ordre par rednet : **toute la flotte** se re-télécharge et reboot.
+
+Chaque programme écoute l'ordre `update all` en tâche de fond. Le principal
+**coupe la poussée** avant de rebooter — mais lance quand même un `update all`
+fusée **posée** (le reboot réinitialise et redémarre désarmé).
 
 ## Communication (rednet)
 
@@ -117,7 +147,8 @@ pos <kp> <ki> <kd>   gains position
 alt <kp> <ki> <kd>   gains altitude
 reseti               remet à zéro les intégrales (anti-windup)
 status               télémétrie du principal
-resend               renvoie toute la consigne
+resend               renvoie cible + gains + trains
+update               met à jour toute la flotte (rednet) + reboot
 ```
 
 ### Persistance (gains + cible)
