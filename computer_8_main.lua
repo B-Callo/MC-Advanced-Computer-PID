@@ -141,6 +141,7 @@ local function newPID(g)
       self.kp, self.ki, self.kd = g2.kp, g2.ki or 0, g2.kd or 0
     end,
     reset = function(self) self.integral = 0; self.prev = 0 end,
+    resetI = function(self) self.integral = 0 end,  -- remet a zero l'integral seul
   }
 end
 
@@ -239,9 +240,16 @@ local function handleMessage(msg, proto)
     if msg.armed  ~= nil then state.armed  = msg.armed  end
     if msg.legs   ~= nil then state.legs   = msg.legs; setLegs(state.legs) end
     if msg.gains then
-      if msg.gains.att then pidAttX:setGains(msg.gains.att); pidAttZ:setGains(msg.gains.att) end
-      if msg.gains.pos then pidPosX:setGains(msg.gains.pos); pidPosZ:setGains(msg.gains.pos) end
-      if msg.gains.alt then pidAlt:setGains(msg.gains.alt) end
+      if msg.gains.att then gains.att = msg.gains.att end
+      if msg.gains.pos then gains.pos = msg.gains.pos end
+      if msg.gains.alt then gains.alt = msg.gains.alt end
+      applyGains()
+      saveGains()   -- persiste : survit au reboot
+    end
+    if msg.resetI then
+      pidAttX:resetI(); pidAttZ:resetI()
+      pidPosX:resetI(); pidPosZ:resetI()
+      pidAlt:resetI()
     end
   end
 end
@@ -254,6 +262,37 @@ pidAttZ = newPID(ATT_GAINS)
 pidPosX = newPID(POS_GAINS)
 pidPosZ = newPID(POS_GAINS)
 pidAlt  = newPID(ALT_GAINS)
+
+--------------------------------------------------------------------------------
+-- Gains : persistance sur disque (survivent au reboot du principal)
+--   Fichier gains.cfg (serialise). Charge au boot, reecrit a chaque changement.
+--   Globaux car reference par handleMessage (defini plus haut).
+--------------------------------------------------------------------------------
+local GAINS_FILE = "gains.cfg"
+gains = { att = ATT_GAINS, pos = POS_GAINS, alt = ALT_GAINS }
+
+function applyGains()
+  pidAttX:setGains(gains.att); pidAttZ:setGains(gains.att)
+  pidPosX:setGains(gains.pos); pidPosZ:setGains(gains.pos)
+  pidAlt:setGains(gains.alt)
+end
+
+function saveGains()
+  local f = fs.open(GAINS_FILE, "w")
+  if f then f.write(textutils.serialize(gains)); f.close() end
+end
+
+function loadGains()
+  if not fs.exists(GAINS_FILE) then return end
+  local f = fs.open(GAINS_FILE, "r")
+  if not f then return end
+  local data = textutils.unserialize(f.readAll() or "")
+  f.close()
+  if type(data) ~= "table" then return end
+  if type(data.att) == "table" then gains.att = data.att end
+  if type(data.pos) == "table" then gains.pos = data.pos end
+  if type(data.alt) == "table" then gains.alt = data.alt end
+end
 
 --------------------------------------------------------------------------------
 -- Un pas de controle
@@ -398,6 +437,8 @@ end
 -- Boucle principale : evenementielle (rednet + timer)
 --------------------------------------------------------------------------------
 local function run()
+  loadGains()    -- recharge les gains sauvegardes (sinon valeurs par defaut)
+  applyGains()
   allOff()
   setLegs(state.legs)
   local timer = os.startTimer(DT)

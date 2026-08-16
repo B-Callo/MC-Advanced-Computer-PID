@@ -42,6 +42,25 @@ local lastTlm = nil
 
 local function send(partial) rednet.broadcast(partial, PROTO_CMD) end
 
+-- Persistance des gains sur disque (survivent au reboot du terminal).
+local GAINS_FILE = "gains.cfg"
+local function saveGains()
+  local f = fs.open(GAINS_FILE, "w")
+  if f then f.write(textutils.serialize(cmd.gains)); f.close() end
+end
+local function loadGains()
+  if not fs.exists(GAINS_FILE) then return end
+  local f = fs.open(GAINS_FILE, "r")
+  if not f then return end
+  local data = textutils.unserialize(f.readAll() or "")
+  f.close()
+  if type(data) ~= "table" then return end
+  if type(data.att) == "table" then cmd.gains.att = data.att end
+  if type(data.pos) == "table" then cmd.gains.pos = data.pos end
+  if type(data.alt) == "table" then cmd.gains.alt = data.alt end
+end
+loadGains()
+
 --------------------------------------------------------------------------------
 -- Aide
 --------------------------------------------------------------------------------
@@ -55,6 +74,7 @@ local function help()
   print("  pos <kp> <ki> <kd> gains position")
   print("  alt <kp> <ki> <kd> gains altitude")
   print("  gains              affiche les gains courants")
+  print("  reseti             remet a zero les integrales (anti-windup)")
   print("  status             telemetrie recue du principal")
   print("  resend             renvoie toute la consigne")
   print("  help | exit")
@@ -98,6 +118,7 @@ local function setGain(key, a, b, c)
   local kp, ki, kd = num(a), num(b), num(c)
   if not (kp and ki and kd) then print("Usage: " .. key .. " <kp> <ki> <kd>"); return end
   cmd.gains[key] = { kp = kp, ki = ki, kd = kd }
+  saveGains()   -- persiste cote terminal
   send({ gains = { [key] = cmd.gains[key] } })
   print(key .. " -> kp=" .. kp .. " ki=" .. ki .. " kd=" .. kd)
 end
@@ -129,6 +150,8 @@ local function handle(input)
   elseif c == "att" or c == "pos" or c == "alt" then
     setGain(c, w[2], w[3], w[4])
   elseif c == "gains" then showGains()
+  elseif c == "reseti" then
+    send({ resetI = true }); print("Integrales remises a zero.")
   elseif c == "status" then showStatus()
   elseif c == "resend" then
     send(cmd); print("Consigne complete renvoyee.")

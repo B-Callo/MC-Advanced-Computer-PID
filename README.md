@@ -115,9 +115,24 @@ legs on | legs off   trains d'atterrissage
 att <kp> <ki> <kd>   gains attitude
 pos <kp> <ki> <kd>   gains position
 alt <kp> <ki> <kd>   gains altitude
+reseti               remet à zéro les intégrales (anti-windup)
 status               télémétrie du principal
 resend               renvoie toute la consigne
 ```
+
+### Persistance des gains
+
+Les gains sont sauvegardés sur disque (`gains.cfg`) **à chaque modification**, à la
+fois sur le principal et sur le terminal. Au **reboot**, ils sont rechargés
+automatiquement — plus besoin de tout re-régler. Les valeurs de la CONFIG ne
+servent que de défaut au tout premier démarrage (fichier absent).
+
+### Réinitialiser les intégrales (`reseti`)
+
+Le terme intégral (`ki`) accumule l'erreur dans le temps. En cas de dérive ou de
+saturation (windup) — typiquement après une manœuvre brutale ou une longue
+consigne tenue — `reseti` remet à zéro l'intégrale des 5 PID sans toucher aux
+gains. Utile aussi juste avant un décollage/atterrissage pour repartir « propre ».
 
 ## Réglage / calibration
 
