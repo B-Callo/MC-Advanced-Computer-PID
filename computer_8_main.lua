@@ -153,10 +153,16 @@ local relayPower  = peripheral.wrap(RELAY_POWER)
    or error("Relay puissance introuvable : " .. RELAY_POWER, 0)
 local screen      = peripheral.wrap(SCREEN)   -- peut etre nil (optionnel)
 
--- Modem wireless pour rednet (le meme sert au gps.locate()).
-local modem = peripheral.find("modem", function(_, m) return m.isWireless() end)
-if not modem then error("Aucun modem wireless (necessaire GPS + rednet).", 0) end
-rednet.open(peripheral.getName(modem))
+-- Ouvre rednet sur TOUS les modems (filaire pour la comm interne avec les autres
+-- ordis). Le modem WIRELESS reste indispensable pour gps.locate() (pas de GPS en filaire).
+local opened = 0
+for _, name in ipairs(peripheral.getNames()) do
+  if peripheral.getType(name) == "modem" then
+    rednet.open(name)
+    opened = opened + 1
+  end
+end
+if opened == 0 then error("Aucun modem : rednet impossible.", 0) end
 
 --------------------------------------------------------------------------------
 -- Sorties

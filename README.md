@@ -17,9 +17,16 @@ position horizontale et altitude.
 - **`redstone_relay_8`** — puissance (front) + trains d'atterrissage (back).
 - **`screen_1`** — écran 1×3 pour la télémétrie.
 
-Chaque ordinateur a besoin d'un **modem wireless** (il sert à la fois au
-`gps.locate()` et à la communication `rednet`). Une **constellation GPS**
-(4 hosts) doit être en portée.
+**Modems** — la communication (`rednet`) passe par le **réseau filaire** qui relie
+les ordinateurs entre eux :
+
+- `computer_8` / `computer_6` / `computer_9` : modem **wireless** (obligatoire pour
+  `gps.locate()` — le GPS ne fonctionne **pas** en filaire) **+** modem filaire
+  pour la comm interne.
+- `computer_7` (terminal) : modem **filaire** seul suffit (pas de GPS).
+
+Chaque programme ouvre `rednet` sur **tous** les modems présents. Une
+**constellation GPS** (4 hosts) doit être en portée des modems wireless.
 
 ## Principe : orientation par produit vectoriel
 

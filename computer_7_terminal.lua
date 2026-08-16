@@ -16,9 +16,16 @@ local PROTO_CMD = "rkt_cmd"   -- -> principal
 local PROTO_TLM = "rkt_tlm"   -- <- principal (telemetrie)
 --===========================================================================--
 
-local modem = peripheral.find("modem", function(_, m) return m.isWireless() end)
-if not modem then error("Aucun modem wireless requis pour rednet.", 0) end
-rednet.open(peripheral.getName(modem))
+-- Ouvre rednet sur TOUS les modems presents (ici : le modem filaire local
+-- qui relie le terminal au reseau interne de la fusee).
+local opened = 0
+for _, name in ipairs(peripheral.getNames()) do
+  if peripheral.getType(name) == "modem" then
+    rednet.open(name)
+    opened = opened + 1
+  end
+end
+if opened == 0 then error("Aucun modem : rednet impossible.", 0) end
 
 -- Etat local (miroir de la consigne envoyee au principal).
 local cmd = {
