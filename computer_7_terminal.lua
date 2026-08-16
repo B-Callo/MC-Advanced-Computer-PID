@@ -42,24 +42,32 @@ local lastTlm = nil
 
 local function send(partial) rednet.broadcast(partial, PROTO_CMD) end
 
--- Persistance des gains sur disque (survivent au reboot du terminal).
-local GAINS_FILE = "gains.cfg"
-local function saveGains()
-  local f = fs.open(GAINS_FILE, "w")
-  if f then f.write(textutils.serialize(cmd.gains)); f.close() end
+-- Persistance sur disque (gains + cible + trains) : survit au reboot du terminal.
+-- On NE persiste PAS 'armed' (securite : le terminal ne doit jamais rearmer seul).
+local CFG_FILE = "rocket.cfg"
+local function saveCfg()
+  local f = fs.open(CFG_FILE, "w")
+  if f then
+    f.write(textutils.serialize({ gains = cmd.gains, target = cmd.target, legs = cmd.legs }))
+    f.close()
+  end
 end
-local function loadGains()
-  if not fs.exists(GAINS_FILE) then return end
-  local f = fs.open(GAINS_FILE, "r")
+local function loadCfg()
+  if not fs.exists(CFG_FILE) then return end
+  local f = fs.open(CFG_FILE, "r")
   if not f then return end
   local data = textutils.unserialize(f.readAll() or "")
   f.close()
   if type(data) ~= "table" then return end
-  if type(data.att) == "table" then cmd.gains.att = data.att end
-  if type(data.pos) == "table" then cmd.gains.pos = data.pos end
-  if type(data.alt) == "table" then cmd.gains.alt = data.alt end
+  if type(data.gains) == "table" then
+    if type(data.gains.att) == "table" then cmd.gains.att = data.gains.att end
+    if type(data.gains.pos) == "table" then cmd.gains.pos = data.gains.pos end
+    if type(data.gains.alt) == "table" then cmd.gains.alt = data.gains.alt end
+  end
+  if type(data.target) == "table" then cmd.target = data.target end
+  if type(data.legs) == "boolean" then cmd.legs = data.legs end
 end
-loadGains()
+loadCfg()
 
 --------------------------------------------------------------------------------
 -- Aide
@@ -118,7 +126,7 @@ local function setGain(key, a, b, c)
   local kp, ki, kd = num(a), num(b), num(c)
   if not (kp and ki and kd) then print("Usage: " .. key .. " <kp> <ki> <kd>"); return end
   cmd.gains[key] = { kp = kp, ki = ki, kd = kd }
-  saveGains()   -- persiste cote terminal
+  saveCfg()   -- persiste cote terminal
   send({ gains = { [key] = cmd.gains[key] } })
   print(key .. " -> kp=" .. kp .. " ki=" .. ki .. " kd=" .. kd)
 end
@@ -133,11 +141,13 @@ local function handle(input)
     local x, y, z = num(w[2]), num(w[3]), num(w[4])
     if not (x and y and z) then print("Usage: goto <x> <y> <z>"); return end
     cmd.target = { x = x, y = y, z = z }
+    saveCfg()
     send({ target = cmd.target })
     print("Cible -> " .. fmtVec(cmd.target))
   elseif c == "x" or c == "y" or c == "z" then
     local v = num(w[2]); if not v then print("Usage: " .. c .. " <valeur>"); return end
     cmd.target[c] = v
+    saveCfg()
     send({ target = cmd.target })
     print("Cible -> " .. fmtVec(cmd.target))
   elseif c == "arm" then
@@ -146,7 +156,7 @@ local function handle(input)
     cmd.armed = false; send({ armed = false }); print(">> securite")
   elseif c == "legs" then
     local on = (w[2] or ""):lower() == "on"
-    cmd.legs = on; send({ legs = on }); print("Trains: " .. (on and "sortis" or "rentres"))
+    cmd.legs = on; saveCfg(); send({ legs = on }); print("Trains: " .. (on and "sortis" or "rentres"))
   elseif c == "att" or c == "pos" or c == "alt" then
     setGain(c, w[2], w[3], w[4])
   elseif c == "gains" then showGains()
@@ -154,7 +164,9 @@ local function handle(input)
     send({ resetI = true }); print("Integrales remises a zero.")
   elseif c == "status" then showStatus()
   elseif c == "resend" then
-    send(cmd); print("Consigne complete renvoyee.")
+    -- volontairement SANS 'armed' (evite de desarmer par accident)
+    send({ target = cmd.target, gains = cmd.gains, legs = cmd.legs })
+    print("Cible + gains + trains renvoyes (arm inchange).")
   elseif c == "exit" then error("__exit__", 0)
   elseif c == "" then -- rien
   else print("Inconnu : " .. c .. "  (help)")
@@ -168,7 +180,9 @@ local function inputLoop()
   term.clear(); term.setCursorPos(1, 1)
   print("=== Terminal Fusee (computer_7) ===")
   help()
-  send(cmd)  -- pousse l'etat initial au principal
+  -- Pas d'envoi automatique au demarrage : le principal garde sa propre cible
+  -- (persistee) et son etat 'armed'. Un 'send(cmd)' ici forcerait la cible a la
+  -- valeur locale et DESARMERAIT la fusee en vol. Utilise 'resend' si besoin.
   while true do
     write("\n> ")
     local line = read()

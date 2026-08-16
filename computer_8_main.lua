@@ -236,7 +236,7 @@ local function handleMessage(msg, proto)
     end
 
   elseif proto == PROTO_CMD then
-    if msg.target ~= nil then state.target = msg.target end
+    if msg.target ~= nil then state.target = msg.target; saveCfg() end
     if msg.armed  ~= nil then state.armed  = msg.armed  end
     if msg.legs   ~= nil then state.legs   = msg.legs; setLegs(state.legs) end
     if msg.gains then
@@ -244,7 +244,7 @@ local function handleMessage(msg, proto)
       if msg.gains.pos then gains.pos = msg.gains.pos end
       if msg.gains.alt then gains.alt = msg.gains.alt end
       applyGains()
-      saveGains()   -- persiste : survit au reboot
+      saveCfg()   -- persiste gains + cible : survit au reboot
     end
     if msg.resetI then
       pidAttX:resetI(); pidAttZ:resetI()
@@ -264,11 +264,11 @@ pidPosZ = newPID(POS_GAINS)
 pidAlt  = newPID(ALT_GAINS)
 
 --------------------------------------------------------------------------------
--- Gains : persistance sur disque (survivent au reboot du principal)
---   Fichier gains.cfg (serialise). Charge au boot, reecrit a chaque changement.
+-- Persistance sur disque (survit au reboot du principal) : gains + cible.
+--   Fichier rocket.cfg (serialise). Charge au boot, reecrit a chaque changement.
 --   Globaux car reference par handleMessage (defini plus haut).
 --------------------------------------------------------------------------------
-local GAINS_FILE = "gains.cfg"
+local CFG_FILE = "rocket.cfg"
 gains = { att = ATT_GAINS, pos = POS_GAINS, alt = ALT_GAINS }
 
 function applyGains()
@@ -277,21 +277,29 @@ function applyGains()
   pidAlt:setGains(gains.alt)
 end
 
-function saveGains()
-  local f = fs.open(GAINS_FILE, "w")
-  if f then f.write(textutils.serialize(gains)); f.close() end
+-- Sauvegarde gains + cible. On NE persiste PAS 'armed' (securite : au reboot la
+-- fusee reste desarmee tant qu'on ne l'a pas rearmee explicitement).
+function saveCfg()
+  local f = fs.open(CFG_FILE, "w")
+  if f then
+    f.write(textutils.serialize({ gains = gains, target = state.target }))
+    f.close()
+  end
 end
 
-function loadGains()
-  if not fs.exists(GAINS_FILE) then return end
-  local f = fs.open(GAINS_FILE, "r")
+function loadCfg()
+  if not fs.exists(CFG_FILE) then return end
+  local f = fs.open(CFG_FILE, "r")
   if not f then return end
   local data = textutils.unserialize(f.readAll() or "")
   f.close()
   if type(data) ~= "table" then return end
-  if type(data.att) == "table" then gains.att = data.att end
-  if type(data.pos) == "table" then gains.pos = data.pos end
-  if type(data.alt) == "table" then gains.alt = data.alt end
+  if type(data.gains) == "table" then
+    if type(data.gains.att) == "table" then gains.att = data.gains.att end
+    if type(data.gains.pos) == "table" then gains.pos = data.gains.pos end
+    if type(data.gains.alt) == "table" then gains.alt = data.gains.alt end
+  end
+  if type(data.target) == "table" then state.target = data.target end
 end
 
 --------------------------------------------------------------------------------
@@ -437,7 +445,7 @@ end
 -- Boucle principale : evenementielle (rednet + timer)
 --------------------------------------------------------------------------------
 local function run()
-  loadGains()    -- recharge les gains sauvegardes (sinon valeurs par defaut)
+  loadCfg()      -- recharge gains + cible sauvegardes (sinon valeurs par defaut)
   applyGains()
   allOff()
   setLegs(state.legs)

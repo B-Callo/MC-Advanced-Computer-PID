@@ -120,12 +120,19 @@ status               télémétrie du principal
 resend               renvoie toute la consigne
 ```
 
-### Persistance des gains
+### Persistance (gains + cible)
 
-Les gains sont sauvegardés sur disque (`gains.cfg`) **à chaque modification**, à la
-fois sur le principal et sur le terminal. Au **reboot**, ils sont rechargés
-automatiquement — plus besoin de tout re-régler. Les valeurs de la CONFIG ne
-servent que de défaut au tout premier démarrage (fichier absent).
+Les **gains** et la **cible** sont sauvegardés sur disque (`rocket.cfg`) **à chaque
+modification**, sur le principal et sur le terminal. Au **reboot**, ils sont
+rechargés automatiquement — plus besoin de tout re-régler ni de re-saisir la
+cible. Les valeurs de la CONFIG ne servent que de défaut au tout premier
+démarrage (fichier absent).
+
+L'état **`armed` n'est jamais persisté** (sécurité) : après un reboot, la fusée
+reste **désarmée** tant qu'on n'a pas refait `arm`. Le terminal **n'envoie rien
+automatiquement** au démarrage — il ne peut donc pas forcer la cible ni désarmer
+la fusée en vol par accident. Utilise `resend` pour repousser cible + gains +
+trains (sans toucher à `armed`).
 
 ### Réinitialiser les intégrales (`reseti`)
 
