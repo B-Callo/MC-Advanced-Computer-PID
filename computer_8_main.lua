@@ -5,10 +5,10 @@
 
   Orientation par GPS (au lieu d'un gimbal sensor) :
     - computer_8 (ici)  : sa propre position P8 via gps.locate()
-    - computer_5        : place a X+3 de P8 -> envoie sa position P5 (role "X")
+    - computer_6        : place a X+3 de P8 -> envoie sa position P6 (role "X")
     - computer_9        : place a Y+3 de P8 -> envoie sa position P9 (role "Y")
     On reconstruit l'orientation par produit vectoriel :
-        vX = P5 - P8   (axe X du corps de la fusee, dans le monde)
+        vX = P6 - P8   (axe X du corps de la fusee, dans le monde)
         vY = P9 - P8   (axe Y du corps = "haut" de la fusee)
         up = normalize(vY)                 -> direction "haut" reelle
         vZ = vX x vY                        -> axe Z du corps (produit vectoriel)
@@ -51,7 +51,7 @@ local LEGS_SIDE  = "back"    -- trains d'atterrissage (0 = rentres, 15 = sortis)
 
 -- Bras de levier des ordinateurs capteurs (blocs). Sert de repere, on renormalise
 -- de toute facon ; a titre indicatif / verif de coherence.
-local ARM_X = 3   -- computer_5 a X+3
+local ARM_X = 3   -- computer_6 a X+3
 local ARM_Y = 3   -- computer_9 a Y+3
 
 -- ---- Gains PID par defaut (le terminal peut les remplacer en direct) --------
@@ -85,7 +85,7 @@ local I_LIMIT     = 15     -- borne anti-windup des termes integraux.
 local TILT_DEADB  = 0.01   -- zone morte sur l'inclinaison (anti-jitter).
 
 -- Protocoles rednet (doivent matcher les autres ordis).
-local PROTO_SENSOR = "rkt_sensor"   -- <- capteurs (computer_5 / computer_9)
+local PROTO_SENSOR = "rkt_sensor"   -- <- capteurs (computer_6 / computer_9)
 local PROTO_CMD    = "rkt_cmd"      -- <- terminal (computer_7)
 local PROTO_TLM    = "rkt_tlm"      -- -> telemetrie diffusee
 
@@ -194,15 +194,15 @@ end
 -- Etat partage (mis a jour par les messages rednet)
 --------------------------------------------------------------------------------
 local state = {
-  P5 = nil, P9 = nil,     -- dernieres positions recues des bras
-  t5 = -1e9, t9 = -1e9,   -- horodatage de reception (os.clock)
+  P6 = nil, P9 = nil,     -- dernieres positions recues des bras
+  t6 = -1e9, t9 = -1e9,   -- horodatage de reception (os.clock)
   target = nil,           -- { x =, y =, z = }  (y = altitude visee)
   armed = false,
   legs = false,
 }
 
 -- Positions lissees (EMA) pour reduire le bruit / la granularite GPS.
-local filt = { P8 = nil, P5 = nil, P9 = nil }
+local filt = { P8 = nil, P6 = nil, P9 = nil }
 local function ema(key, p)
   if not p then return filt[key] end
   local f = filt[key]
@@ -223,7 +223,7 @@ local function handleMessage(msg, proto)
 
   if proto == PROTO_SENSOR and msg.pos then
     if msg.role == "X" then
-      state.P5, state.t5 = msg.pos, os.clock()
+      state.P6, state.t6 = msg.pos, os.clock()
     elseif msg.role == "Y" then
       state.P9, state.t9 = msg.pos, os.clock()
     end
@@ -267,12 +267,12 @@ local function controlStep()
   local P8 = ema("P8", P8raw)
 
   -- 2) Fraicheur des capteurs de bras
-  local freshX = (now - state.t5) <= RX_TIMEOUT and state.P5 ~= nil
+  local freshX = (now - state.t6) <= RX_TIMEOUT and state.P6 ~= nil
   local freshY = (now - state.t9) <= RX_TIMEOUT and state.P9 ~= nil
-  local P5 = ema("P5", freshX and state.P5 or nil)
+  local P6 = ema("P6", freshX and state.P6 or nil)
   local P9 = ema("P9", freshY and state.P9 or nil)
 
-  local haveOrient = P8 and P5 and P9 and freshX and freshY
+  local haveOrient = P8 and P6 and P9 and freshX and freshY
   tlm.ok = haveOrient and (P8raw ~= nil)
 
   -- Securite : desarme, ou pas de position -> tout couper.
@@ -286,7 +286,7 @@ local function controlStep()
   local tiltX, tiltZ = 0, 0
   local up, bxh, bzh
   if haveOrient then
-    local vX = vsub(P5, P8)         -- axe X du corps
+    local vX = vsub(P6, P8)         -- axe X du corps
     local vY = vsub(P9, P8)         -- axe Y du corps (haut)
     up = vnorm(vY)
     local vZ = vcross(vX, vY)       -- axe Z du corps (produit vectoriel)

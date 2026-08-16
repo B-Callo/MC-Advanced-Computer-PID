@@ -1,11 +1,11 @@
 --[[============================================================================
-  FUSEE Creat Aeronautics  --  CAPTEUR D'ORIENTATION X ("computer_5")
+  FUSEE Creat Aeronautics  --  CAPTEUR D'ORIENTATION X ("computer_6")
   ---------------------------------------------------------------------------
   Place a X+3 du principal (computer_8). Role : donner un point de reference
   sur l'axe X du corps de la fusee.
 
   Boucle : gps.locate() -> broadcast rednet de la position au principal.
-  Le principal fait vX = P5 - P8 pour reconstruire l'axe X du corps, puis
+  Le principal fait vX = P6 - P8 pour reconstruire l'axe X du corps, puis
   vZ = vX x vY (produit vectoriel) pour l'orientation complete.
 
   Aucun cablage redstone ici : juste un modem wireless (GPS + rednet).
@@ -33,7 +33,7 @@ local function run()
       sent = sent + 1
       term.setCursorPos(1, 1)
       term.clearLine()
-      term.write(string.format("[X] P5 = %.1f %.1f %.1f  (envois %d)", x, y, z, sent))
+      term.write(string.format("[X] P6 = %.1f %.1f %.1f  (envois %d)", x, y, z, sent))
     else
       fails = fails + 1
       term.setCursorPos(1, 2)

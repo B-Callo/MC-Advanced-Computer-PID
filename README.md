@@ -10,7 +10,7 @@ position horizontale et altitude.
 - **1 vector thruster** sous la fusée (poussée + orientation par redstone).
 - **`computer_8`** — ordinateur **principal** : reçoit les positions, calcule
   l'orientation, exécute les 3 PID, pilote les relays, affiche sur l'écran.
-- **`computer_5`** — capteur placé à **X+3** du principal (axe X du corps).
+- **`computer_6`** — capteur placé à **X+3** du principal (axe X du corps).
 - **`computer_9`** — capteur placé à **Y+3** du principal (axe Y = « haut »).
 - **`computer_7`** — **terminal** : saisie des cibles + réglage des PID.
 - **`redstone_relay_7`** — orientation du thruster (4 directions).
@@ -27,7 +27,7 @@ Chaque ordinateur lit sa position absolue via `gps.locate()`. Le principal
 reconstruit deux vecteurs dans le repère du monde :
 
 ```
-vX = P5 - P8      -> axe X du corps de la fusée
+vX = P6 - P8      -> axe X du corps de la fusée
 vY = P9 - P8      -> axe Y du corps (le « haut »)
 up = normalize(vY)                 -> direction réelle du haut
 vZ = vX × vY                       -> axe Z du corps (produit vectoriel)
@@ -75,7 +75,7 @@ cible Y   ─> ALTITUDE (PID) ────────────────�
 | Fichier                    | Ordinateur    | Rôle                              |
 |----------------------------|---------------|-----------------------------------|
 | `computer_8_main.lua`      | `computer_8`  | contrôleur principal (3 PID)      |
-| `computer_5_sensor_x.lua`  | `computer_5`  | capteur position, axe X (X+3)     |
+| `computer_6_sensor_x.lua`  | `computer_6`  | capteur position, axe X (X+3)     |
 | `computer_9_sensor_y.lua`  | `computer_9`  | capteur position, axe Y (Y+3)     |
 | `computer_7_terminal.lua`  | `computer_7`  | terminal de commande / tuning     |
 
