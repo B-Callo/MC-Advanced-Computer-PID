@@ -76,7 +76,7 @@ local MAX_TILT = 0.707   -- = sin(45 deg) : inclinaison maxi demandee ~45 degres
 -- demande simplement le lean maxi vers la cible, avec un ecart constant (pas de
 -- terme derive qui s'emballe -> plus de clignotement de la consigne). En-deca, le
 -- PID de position agit normalement pour freiner et s'arreter en douceur.
-local APPROACH_DIST = 5
+local APPROACH_DIST = 20
 
 -- Sens de correction. A basculer si un axe DIVERGE (voir calibration dans README).
 local ATT_INVERT_X = false   -- attitude, axe X du corps
