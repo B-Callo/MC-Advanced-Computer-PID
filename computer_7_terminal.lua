@@ -107,6 +107,9 @@ local function showStatus()
   print("  Cible   : " .. fmtVec(t.target))
   print(string.format("  Tilt    : X=%+.3f Z=%+.3f", t.tiltX or 0, t.tiltZ or 0))
   print(string.format("  Consigne: X=%+.3f Z=%+.3f", t.setTiltX or 0, t.setTiltZ or 0))
+  print(string.format("  Bras    : |X|=%.2f |Y|=%.2f  (attendu ~3)",
+        t.lenX or 0, t.lenY or 0))
+  print(string.format("  Age GPS : X=%.1fs Y=%.1fs", t.ageX or 9, t.ageY or 9))
   print(string.format("  Puissance %d/15   Trains: %s",
         t.power or 0, t.legs and "sortis" or "rentres"))
 end

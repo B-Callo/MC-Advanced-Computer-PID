@@ -7,12 +7,16 @@
     - computer_8 (ici)  : sa propre position P8 via gps.locate()
     - computer_6        : place a X+3 de P8 -> envoie sa position P6 (role "X")
     - computer_9        : place a Y+3 de P8 -> envoie sa position P9 (role "Y")
-    On reconstruit l'orientation par produit vectoriel :
-        vX = P6 - P8   (axe X du corps de la fusee, dans le monde)
-        vY = P9 - P8   (axe Y du corps = "haut" de la fusee)
-        up = normalize(vY)                 -> direction "haut" reelle
-        vZ = vX x vY                        -> axe Z du corps (produit vectoriel)
-    L'inclinaison est la part horizontale de `up`, projetee sur les axes corps.
+    On reconstruit un repere du corps ORTHONORMALISE (Gram-Schmidt) :
+        vX = P6 - P8   (bras X, dans le repere monde)
+        vY = P9 - P8   (bras Y = "haut" de la fusee)
+        ey = normalize(vY)                     -> axe haut du corps
+        ex = normalize(vX - (vX.ey) ey)        -> axe X corps, orthogonal a ey
+        ez = ex x ey                           -> axe Z corps
+    Inclinaison = verticale du monde (0,1,0) vue dans ce repere :
+        tiltX = ex.y   tiltZ = ez.y   (0 si la fusee est droite).
+    (L'ancienne methode projetait sur des axes NON orthogonaux -> diaphonie
+     X/Z des que la fusee penchait, d'ou des tilts incoherents. Corrige.)
 
   Cascade de 3 PID :
     1. ATTITUDE (interne) : suit une consigne d'inclinaison -> oriente le thruster
@@ -328,46 +332,67 @@ local function controlStep()
   local haveOrient = P8 and P6 and P9 and freshX and freshY
   tlm.ok = haveOrient and (P8raw ~= nil)
 
-  -- Securite : desarme, ou pas de position -> tout couper.
-  if not state.armed or not P8 then
-    allOff()
-    tlm.P8, tlm.power, tlm.armed = P8, 0, state.armed
-    tlm.target = state.target      -- remonte la cible meme desarmee (feedback)
-    return
-  end
-
-  -- 3) Orientation par produit vectoriel
+  -- 3) Orientation : on construit un repere du corps ORTHONORMALISE (Gram-Schmidt)
+  --    a partir des deux bras, puis l'inclinaison = la verticale du monde (0,1,0)
+  --    exprimee dans ce repere. Fusee droite => tiltX = tiltZ = 0.
+  --
+  --    ey = haut de la fusee (bras Y, normalise)
+  --    ex = bras X debarrasse de sa composante le long de ey (donc perpendiculaire
+  --         a ey), normalise  -> evite la diaphonie X/Z quand la fusee penche
+  --    ez = ex x ey
+  --    tiltX = ex . (0,1,0) = ex.y  ;  tiltZ = ez . (0,1,0) = ez.y
   local tiltX, tiltZ = 0, 0
-  local up, bxh, bzh
+  local ex, ey, ez          -- axes du corps (unitaires) dans le repere monde
+  local exh, ezh            -- directions horizontales de ces axes (pour la position)
+  local lenX, lenY = 0, 0
   if haveOrient then
-    local vX = vsub(P6, P8)         -- axe X du corps
-    local vY = vsub(P9, P8)         -- axe Y du corps (haut)
-    up = vnorm(vY)
-    local vZ = vcross(vX, vY)       -- axe Z du corps (produit vectoriel)
+    local vX = vsub(P6, P8)         -- bras X (doit mesurer ~ARM_X blocs)
+    local vY = vsub(P9, P8)         -- bras Y = haut (doit mesurer ~ARM_Y blocs)
+    lenX, lenY = vlen(vX), vlen(vY)
+    ey = vnorm(vY)
+    if ey then
+      local d = vX.x*ey.x + vX.y*ey.y + vX.z*ey.z      -- projection de vX sur ey
+      ex = vnorm({ x = vX.x - d*ey.x, y = vX.y - d*ey.y, z = vX.z - d*ey.z })
+    end
+    if ex and ey then ez = vnorm(vcross(ex, ey)) end
 
-    -- reperes horizontaux des axes corps, dans le monde
-    bxh = hnorm(vX.x, vX.z)
-    bzh = hnorm(vZ.x, vZ.z)
-
-    if up and bxh and bzh then
-      -- part horizontale du "haut" = inclinaison, projetee sur les axes corps
-      tiltX = up.x * bxh.x + up.z * bxh.z
-      tiltZ = up.x * bzh.x + up.z * bzh.z
+    if ex and ey and ez then
+      tiltX = ex.y
+      tiltZ = ez.y
       if math.abs(tiltX) <= TILT_DEADB then tiltX = 0 end
       if math.abs(tiltZ) <= TILT_DEADB then tiltZ = 0 end
+      exh = hnorm(ex.x, ex.z)       -- direction horizontale de l'axe X corps
+      ezh = hnorm(ez.x, ez.z)       -- direction horizontale de l'axe Z corps
     else
-      up, bxh, bzh = nil, nil, nil
+      ex, ey, ez = nil, nil, nil
     end
+  end
+
+  -- Telemetrie d'orientation : calculee EN PERMANENCE (meme desarmee), pour
+  -- pouvoir observer/calibrer les tilts fusee posee et a la main.
+  tlm.P8, tlm.P6, tlm.P9 = P8, P6, P9
+  tlm.lenX, tlm.lenY = lenX, lenY
+  tlm.ageX, tlm.ageY = now - state.t6, now - state.t9
+  tlm.tiltX, tlm.tiltZ = tiltX, tiltZ
+  tlm.target, tlm.armed, tlm.legs = state.target, state.armed, state.legs
+
+  -- Securite : desarme, ou pas de position -> couper les actionneurs (mais on a
+  -- deja calcule et remonte l'orientation ci-dessus).
+  if not state.armed or not P8 then
+    allOff()
+    tlm.power = 0
+    tlm.setTiltX, tlm.setTiltZ = 0, 0
+    return
   end
 
   -- 4) Boucle de POSITION (externe) -> consigne d'inclinaison
   local setTiltX, setTiltZ = 0, 0
-  if state.target and bxh and bzh then
-    -- ecart horizontal monde -> repere corps
-    local ex = state.target.x - P8.x
-    local ez = state.target.z - P8.z
-    local errBX = ex * bxh.x + ez * bxh.z   -- ecart le long de X corps
-    local errBZ = ex * bzh.x + ez * bzh.z   -- ecart le long de Z corps
+  if state.target and exh and ezh then
+    -- ecart horizontal monde -> projete sur les axes horizontaux du corps
+    local ax = state.target.x - P8.x
+    local az = state.target.z - P8.z
+    local errBX = ax * exh.x + az * exh.z   -- ecart le long de X corps
+    local errBZ = ax * ezh.x + az * ezh.z   -- ecart le long de Z corps
 
     local uX = pidPosX:step(errBX, dt)
     local uZ = pidPosZ:step(errBZ, dt)
@@ -378,7 +403,7 @@ local function controlStep()
   end
 
   -- 5) Boucle d'ATTITUDE (interne) -> orientation thruster
-  if up and bxh and bzh then
+  if ex and ey and ez then
     local cmdX = pidAttX:step(setTiltX - tiltX, dt)
     local cmdZ = pidAttZ:step(setTiltZ - tiltZ, dt)
     if ATT_INVERT_X then cmdX = -cmdX end
@@ -398,12 +423,9 @@ local function controlStep()
   power = clamp(power, 0, 15)
   setPower(power)
 
-  -- 7) Telemetrie
-  tlm.P8, tlm.up = P8, up
-  tlm.tiltX, tlm.tiltZ = tiltX, tiltZ
+  -- 7) Telemetrie (le reste a deja ete remonte plus haut)
   tlm.setTiltX, tlm.setTiltZ = setTiltX, setTiltZ
-  tlm.power, tlm.armed, tlm.legs = power, state.armed, state.legs
-  tlm.target = state.target
+  tlm.power, tlm.legs = power, state.legs
 end
 
 --------------------------------------------------------------------------------
@@ -426,11 +448,13 @@ local function drawTo(out, isMonitor)
   line(3, "Cible" .. fmtVec(tlm.target))
   line(4, string.format("Tilt X=%+.3f Z=%+.3f", tlm.tiltX or 0, tlm.tiltZ or 0))
   line(5, string.format("Csg  X=%+.3f Z=%+.3f", tlm.setTiltX or 0, tlm.setTiltZ or 0))
-  line(6, string.format("Puissance %2d/15   Trains:%s",
+  line(6, string.format("Bras |X|=%.1f |Y|=%.1f  ageXY=%.1f/%.1fs",
+        tlm.lenX or 0, tlm.lenY or 0, tlm.ageX or 9, tlm.ageY or 9))
+  line(7, string.format("Puissance %2d/15   Trains:%s",
         tlm.power or 0, tlm.legs and "SORTIS" or "rentres"))
   if not isMonitor then
-    line(7, "")
-    line(8, "Ctrl+T pour arreter (coupe tout).")
+    line(8, "")
+    line(9, "Ctrl+T pour arreter (coupe tout).")
   end
 end
 
