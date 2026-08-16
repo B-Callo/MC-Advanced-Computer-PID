@@ -72,6 +72,12 @@ local BASE_POWER = 8
 -- ou 1.0 = fusee couchee a l'horizontale). Limite l'agressivite du deplacement.
 local MAX_TILT = 0.707   -- = sin(45 deg) : inclinaison maxi demandee ~45 degres
 
+-- Distance horizontale (blocs) au-dela de laquelle l'ecart est sature : la fusee
+-- demande simplement le lean maxi vers la cible, avec un ecart constant (pas de
+-- terme derive qui s'emballe -> plus de clignotement de la consigne). En-deca, le
+-- PID de position agit normalement pour freiner et s'arreter en douceur.
+local APPROACH_DIST = 5
+
 -- Sens de correction. A basculer si un axe DIVERGE (voir calibration dans README).
 local ATT_INVERT_X = false   -- attitude, axe X du corps
 local ATT_INVERT_Z = false   -- attitude, axe Z du corps
@@ -397,6 +403,16 @@ local function controlStep()
     local az = state.target.z - P8.z
     local errBX = ax * exh.x + az * exh.z   -- ecart le long de X corps
     local errBZ = ax * ezh.x + az * ezh.z   -- ecart le long de Z corps
+
+    -- Sature la NORME de l'ecart a APPROACH_DIST : sur une cible lointaine on
+    -- demande juste "lean maxi vers la cible" avec un ecart CONSTANT -> le terme
+    -- derive retombe a ~0 (fini le clignotement bang-bang +/-MAX_TILT). En-deca,
+    -- l'ecart est reel et le PID agit normalement pour un arret en douceur.
+    local emag = math.sqrt(errBX * errBX + errBZ * errBZ)
+    if emag > APPROACH_DIST and emag > 0 then
+      local s = APPROACH_DIST / emag
+      errBX, errBZ = errBX * s, errBZ * s
+    end
 
     local uX = pidPosX:step(errBX, dt)
     local uZ = pidPosZ:step(errBZ, dt)
