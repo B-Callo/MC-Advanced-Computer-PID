@@ -70,7 +70,7 @@ local BASE_POWER = 8
 
 -- Consigne d'inclinaison maxi demandee par la boucle de position (unites "tilt",
 -- ou 1.0 = fusee couchee a l'horizontale). Limite l'agressivite du deplacement.
-local MAX_TILT = 0.35
+local MAX_TILT = 0.707   -- = sin(45 deg) : inclinaison maxi demandee ~45 degres
 
 -- Sens de correction. A basculer si un axe DIVERGE (voir calibration dans README).
 local ATT_INVERT_X = false   -- attitude, axe X du corps
