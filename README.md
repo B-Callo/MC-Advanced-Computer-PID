@@ -89,39 +89,40 @@ cible Y   ─> ALTITUDE (PID) ────────────────�
 
 ## Installation
 
-Sur chaque ordinateur, installer **deux** fichiers : son programme (sous le nom
-`startup.lua`, pour démarrer au boot) et `update.lua` (pour les mises à jour).
+Sur chaque machine, on installe d'abord `update.lua`, puis on lui donne son
+**rôle** — `update.lua` télécharge alors le bon programme en `startup.lua` et
+reboote tout seul. Plus besoin de retenir quel fichier va où.
 
-Première install — sur chaque machine (le `delete` évite l'erreur « file exists »
-de `wget`, et ne râle pas si le fichier est absent) :
+Sur chaque ordinateur :
 
 ```
-delete startup.lua
 wget https://raw.githubusercontent.com/B-Callo/MC-Advanced-Computer-PID/main/update.lua update.lua
 ```
 
-puis récupérer son programme, ex. sur `computer_8` :
+puis, **une seule fois**, selon la machine :
 
-```
-wget https://raw.githubusercontent.com/B-Callo/MC-Advanced-Computer-PID/main/computer_8_main.lua startup.lua
-reboot
-```
+| Machine       | Commande            |
+|---------------|---------------------|
+| `computer_8`  | `update main`       |
+| `computer_6`  | `update sensorx`    |
+| `computer_9`  | `update sensory`    |
+| `computer_7`  | `update terminal`   |
 
-(remplacer par `computer_6_sensor_x.lua`, `computer_9_sensor_y.lua`,
-`computer_7_terminal.lua` selon la machine).
+Le rôle est mémorisé dans `role.cfg` : les mises à jour suivantes sont
+automatiques.
 
 ## Mise à jour
 
-Une fois `update.lua` en place partout, plus besoin de retaper les `wget` :
+- `update`      — met à jour **cette machine** selon son rôle mémorisé, reboot.
+- `update all`  — depuis **n'importe quelle** machine (ou la commande `update` du
+  terminal), diffuse l'ordre par rednet : **toute la flotte** se re-télécharge et
+  reboot, chacune selon **son** rôle.
+- `update <role>` — force/redéfinit le rôle de cette machine puis met à jour.
 
-- `update`     — met à jour **cette machine** (détecte le bon fichier via l'ID de
-  l'ordinateur, où l'ID = le *N* de `computer_N`), écrase `startup.lua`, reboot.
-- `update all` — depuis **n'importe quelle** machine (typiquement le terminal),
-  diffuse l'ordre par rednet : **toute la flotte** se re-télécharge et reboot.
-
+Le rôle est déterminé par `role.cfg` (pas par l'ID de l'ordinateur, peu fiable).
 Chaque programme écoute l'ordre `update all` en tâche de fond. Le principal
-**coupe la poussée** avant de rebooter — mais lance quand même un `update all`
-fusée **posée** (le reboot réinitialise et redémarre désarmé).
+**coupe la poussée** avant de rebooter — mais lance quand même les updates fusée
+**posée** (le reboot redémarre désarmé).
 
 ## Communication (rednet)
 
