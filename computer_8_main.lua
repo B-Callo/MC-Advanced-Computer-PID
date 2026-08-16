@@ -75,8 +75,8 @@ local MAX_TILT = 0.35
 -- Sens de correction. A basculer si un axe DIVERGE (voir calibration dans README).
 local ATT_INVERT_X = false   -- attitude, axe X du corps
 local ATT_INVERT_Z = false   -- attitude, axe Z du corps
-local POS_INVERT_X = false   -- position, axe X du corps
-local POS_INVERT_Z = false   -- position, axe Z du corps
+local POS_INVERT_X = true    -- position, axe X du corps (sens naturellement inverse)
+local POS_INVERT_Z = true    -- position, axe Z du corps (sens naturellement inverse)
 
 -- ---- Reglages fins ----------------------------------------------------------
 local DT          = 0.1    -- periode de boucle (s). 0.05 = 1 tick MC.
