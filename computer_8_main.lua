@@ -5,18 +5,16 @@
 
   Orientation par GPS (au lieu d'un gimbal sensor) :
     - computer_8 (ici)  : sa propre position P8 via gps.locate()
-    - computer_6        : place a X+3 de P8 -> envoie sa position P6 (role "X")
-    - computer_9        : place a Y+3 de P8 -> envoie sa position P9 (role "Y")
-    On reconstruit un repere du corps ORTHONORMALISE (Gram-Schmidt) :
-        vX = P6 - P8   (bras X, dans le repere monde)
-        vY = P9 - P8   (bras Y = "haut" de la fusee)
-        ey = normalize(vY)                     -> axe haut du corps
-        ex = normalize(vX - (vX.ey) ey)        -> axe X corps, orthogonal a ey
-        ez = ex x ey                           -> axe Z corps
+    - computer_6        : bras HORIZONTAL 1 -> envoie sa position P6 (role "X")
+    - computer_9        : bras HORIZONTAL 2, perpendiculaire -> P9 (role "Y")
+    Les DEUX bras sont HORIZONTAUX et perpendiculaires. Le "haut" de la fusee
+    est la NORMALE a leur plan = leur PRODUIT VECTORIEL :
+        vA = P6 - P8   vB = P9 - P8         (les deux bras, dans le repere monde)
+        ey = normalize(vA x vB)             -> axe haut du corps (remis vers le haut)
+        ex = normalize(vA - (vA.ey) ey)     -> axe X corps, orthogonal a ey
+        ez = ex x ey                        -> axe Z corps
     Inclinaison = verticale du monde (0,1,0) vue dans ce repere :
         tiltX = ex.y   tiltZ = ez.y   (0 si la fusee est droite).
-    (L'ancienne methode projetait sur des axes NON orthogonaux -> diaphonie
-     X/Z des que la fusee penchait, d'ou des tilts incoherents. Corrige.)
 
   Cascade de 3 PID :
     1. ATTITUDE (interne) : suit une consigne d'inclinaison -> oriente le thruster
@@ -332,27 +330,32 @@ local function controlStep()
   local haveOrient = P8 and P6 and P9 and freshX and freshY
   tlm.ok = haveOrient and (P8raw ~= nil)
 
-  -- 3) Orientation : on construit un repere du corps ORTHONORMALISE (Gram-Schmidt)
-  --    a partir des deux bras, puis l'inclinaison = la verticale du monde (0,1,0)
-  --    exprimee dans ce repere. Fusee droite => tiltX = tiltZ = 0.
-  --
-  --    ey = haut de la fusee (bras Y, normalise)
-  --    ex = bras X debarrasse de sa composante le long de ey (donc perpendiculaire
-  --         a ey), normalise  -> evite la diaphonie X/Z quand la fusee penche
-  --    ez = ex x ey
-  --    tiltX = ex . (0,1,0) = ex.y  ;  tiltZ = ez . (0,1,0) = ez.y
+  -- 3) Orientation : les DEUX bras sont HORIZONTAUX et perpendiculaires
+  --    (computer_6 sur un axe du corps, computer_9 sur l'axe perpendiculaire).
+  --    Le "haut" de la fusee est donc la NORMALE au plan des deux bras, soit
+  --    leur PRODUIT VECTORIEL. On en tire un repere corps orthonormalise :
+  --      vA = P6 - P8   (bras 1)          vB = P9 - P8   (bras 2, perpendiculaire)
+  --      ey = normalize(vA x vB)          (retourne vers le haut si besoin)
+  --      ex = normalize(vA - (vA.ey) ey)  (axe corps dans le plan, perp. a ey)
+  --      ez = ex x ey
+  --    Inclinaison = verticale du monde (0,1,0) vue dans ce repere :
+  --      tiltX = ex.y   tiltZ = ez.y   (0 si la fusee est droite).
   local tiltX, tiltZ = 0, 0
   local ex, ey, ez          -- axes du corps (unitaires) dans le repere monde
   local exh, ezh            -- directions horizontales de ces axes (pour la position)
-  local lenX, lenY = 0, 0
+  local lenA, lenB = 0, 0
   if haveOrient then
-    local vX = vsub(P6, P8)         -- bras X (doit mesurer ~ARM_X blocs)
-    local vY = vsub(P9, P8)         -- bras Y = haut (doit mesurer ~ARM_Y blocs)
-    lenX, lenY = vlen(vX), vlen(vY)
-    ey = vnorm(vY)
+    local vA = vsub(P6, P8)         -- bras 1 (doit mesurer ~3 blocs)
+    local vB = vsub(P9, P8)         -- bras 2 (doit mesurer ~3 blocs)
+    lenA, lenB = vlen(vA), vlen(vB)
+
+    ey = vnorm(vcross(vA, vB))                       -- normale au plan des bras
+    if ey and ey.y < 0 then                          -- s'assure qu'elle pointe en haut
+      ey = { x = -ey.x, y = -ey.y, z = -ey.z }
+    end
     if ey then
-      local d = vX.x*ey.x + vX.y*ey.y + vX.z*ey.z      -- projection de vX sur ey
-      ex = vnorm({ x = vX.x - d*ey.x, y = vX.y - d*ey.y, z = vX.z - d*ey.z })
+      local d = vA.x*ey.x + vA.y*ey.y + vA.z*ey.z    -- projection de vA sur ey
+      ex = vnorm({ x = vA.x - d*ey.x, y = vA.y - d*ey.y, z = vA.z - d*ey.z })
     end
     if ex and ey then ez = vnorm(vcross(ex, ey)) end
 
@@ -371,7 +374,7 @@ local function controlStep()
   -- Telemetrie d'orientation : calculee EN PERMANENCE (meme desarmee), pour
   -- pouvoir observer/calibrer les tilts fusee posee et a la main.
   tlm.P8, tlm.P6, tlm.P9 = P8, P6, P9
-  tlm.lenX, tlm.lenY = lenX, lenY
+  tlm.lenX, tlm.lenY = lenA, lenB
   tlm.ageX, tlm.ageY = now - state.t6, now - state.t9
   tlm.tiltX, tlm.tiltZ = tiltX, tiltZ
   tlm.target, tlm.armed, tlm.legs = state.target, state.armed, state.legs
