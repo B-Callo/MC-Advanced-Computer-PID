@@ -332,6 +332,7 @@ local function controlStep()
   if not state.armed or not P8 then
     allOff()
     tlm.P8, tlm.power, tlm.armed = P8, 0, state.armed
+    tlm.target = state.target      -- remonte la cible meme desarmee (feedback)
     return
   end
 
