@@ -75,7 +75,16 @@ for _, a in ipairs(args) do
   else print("Argument inconnu : " .. a) end
 end
 
--- Determine le role : argument explicite, sinon celui memorise.
+-- Diffuse aux autres machines EN PREMIER (meme si cette machine n'a pas de role
+-- defini : la flotte se met quand meme a jour).
+if wantAll then
+  openModems()
+  rednet.broadcast("update", PROTO_UPDATE)
+  print("Ordre d'update diffuse a toute la flotte.")
+  sleep(0.5)
+end
+
+-- Determine le role de cette machine : argument explicite, sinon celui memorise.
 local role = roleArg or readRole()
 if not role then
   print("Role inconnu pour cette machine.")
@@ -84,14 +93,6 @@ if not role then
   return
 end
 saveRole(role)   -- memorise pour les prochaines fois
-
--- Diffuse aux autres machines si demande.
-if wantAll then
-  openModems()
-  rednet.broadcast("update", PROTO_UPDATE)
-  print("Ordre d'update diffuse a toute la flotte.")
-  sleep(0.5)
-end
 
 if download(role) then
   print("Reboot dans 2 s...  (Ctrl+T pour annuler)")
